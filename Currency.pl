@@ -11,6 +11,30 @@ use JSON::Parse qw(parse_json);
 use Data::Dumper;
 use Date;
 
+my $help = '
+ -h                         Show help
+
+ -s[source_name[,...]]      Sources select
+                              Available sources:
+                                cb - Central Bank of Russia
+                                yh - Yahoo finance
+                                fx - fixer.io (European Central Bank)
+                              Default: cb
+
+ -f[file_name[,...]]        Specify file name
+                              Default: file[index of source].png
+
+ -c[currency_name[,...]]    Currencies select
+                              Supported currencies:
+                                cb: USD, EUR, JPY, CNY, GBP, UAH
+                                yh: visit finance.yahoo.com
+                                fx: visit fixer.io
+                              Default: USD
+
+ -d[dd.mm.yyyy,dd.mm.yyyy]  Specify date range
+                              Default: 01.01.2015,01.02.2015
+';
+
 my %plan = (
 	sources => [\&cb],
 	date => {
@@ -176,7 +200,7 @@ for (@ARGV) {
 	parse_dates($s) if $s =~ s/^-d//;
 	$plan{files} = [ split(',', $s) ] if $s =~ s/^-f//;
 	$plan{currency}->{to} = [ split(',', $s) ] if $s =~ s/^-c//;
+	say $help and exit if $s =~ /^-h/;
 }
 
-$plan{sources}->[$_]->($_) for (0..$#{$plan{sources}});
 do { $plan{sources}->[$_]->($_) if defined $plan{sources}->[$_] } for (0..$#{$plan{sources}});
