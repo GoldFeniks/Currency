@@ -20,7 +20,7 @@ my %plan = (
 	files => [],
 	currency => {
 		from => 'RUB',
-		to => ['USD', 'EUR', 'JPY'],
+		to => ['USD'],
 	}
 );
 
@@ -36,18 +36,24 @@ my %sources = (
 	fx => \&fx,
 );
 
+my %mult = (
+	JPY => 100,
+	CNY => 10,
+	UAH => 10,
+);
+
 sub cb {
 	my $data = [];
 	for (@{$plan{currency}->{to}}) {
 		next if !defined $cb_names{$_};
 		my $url = "https://www.cbr.ru/currency_base/dynamics.aspx?VAL_NM_RQ=$cb_names{$_}\&date_req1=$plan{date}->{start}\&date_req2=$plan{date}->{end}\&rt=1\&mode=1";
 		my $te = HTML::TableExtract->new( attribs => { class => 'data' } )->parse(request($url));
-		my ($values, $dates) = ([], []);
+		my ($values, $dates, $currency) = ([], [], $_);
 		for ($te->tables) {
 			for (@{$_->rows}[1..$#{$_->rows}]) {
-				push @{$dates}, @{$_}[0];
-				@{$_}[2] =~ s/,/./;
-				push @{$values}, @{$_}[2];
+				push @{$dates}, $_->[0];
+				$_->[2] =~ s/,/./;
+				push @{$values}, $_->[2] * ($mult{$currency} // 1) / $_->[1];
 			}
 		}
 		push @{$data}, $dates if !defined($data->[0]);
@@ -78,17 +84,13 @@ sub yh_url {
 
 sub yh {
 	my $data = [];
-	my $usdrub = json_parse_yh(request(yh_url($plan{date}->{start}, $plan{date}->{end}, 'RUB')));
-	push @{$data}, @{$usdrub}[0];
+	my $usdrub = json_parse_yh(request(yh_url($plan{date}->{start}, $plan{date}->{end}, $plan{currency}->{from})));
+	push @{$data}, $usdrub->[0];
 	for (@{$plan{currency}->{to}}) {
-		if (/USD/) {
-			push @{$data}, $usdrub->[1];
-			next;
-		};
-		my $m = /JPY/ ? 100 : 1;
-		my $res = json_parse_yh(request(yh_url($plan{date}->{start}, $plan{date}->{end}, $_)));
-		next if !defined $res;
-		$res->[1]->[-1 * $_] = $usdrub->[1]->[-1 * $_] / $res->[1]->[-1 * $_] * $m for (-$#{$res->[1]}..0);
+		push @{$data}, $usdrub->[1] and next if /USD/;
+		my $res = json_parse_yh(request(yh_url($plan{date}->{start}, $plan{date}->{end}, $_))) // next;
+		my $currency = $_;
+		$res->[1]->[$_] = $usdrub->[1]->[$_] / $res->[1]->[$_] * ($mult{$currency} // 1) for 0..$#{$res->[1]};
 		push @{$data}, $res->[1];
 	}
 	save_graph($data, $_[0]);
@@ -104,12 +106,11 @@ sub check_unique_date {
 }
 
 sub fx {
-	my $data = [];
-	my @dates;
+	my ($data, @dates) = [];
 	push @{$data}, [] for (0..$#{$plan{currency}->{to}} + 1);
 	my ($start_date, $end_date) = ($plan{date}->{start}, $plan{date}->{end});
-	my $step = int(($end_date - $start_date) / 10);
-	my $curr_date = Date->new($start_date);
+	my $step = max(1, int(($end_date - $start_date) / 20));
+	my $curr_date = Date->new($start_date) - $step;
 	my $symbols = join ',', @{$plan{currency}->{to}};
 	while ($curr_date < $end_date) {
 		my $date = min($curr_date += $step, $end_date)->to_string();
@@ -121,13 +122,16 @@ sub fx {
 		next if !check_unique_date(\@dates, $date);
 		push @{$data->[0]}, $json->{date};
 		push @dates, $date;
-		push @{$data->[$_ + 1]}, 1 / ($json->{rates}->{$plan{currency}->{to}->[$_]} // 1) * ($plan{currency}->{to}->[$_] =~ m{JPY} ? 100 : 1) for (0..$#{$plan{currency}->{to}});
+		for (0..$#{$plan{currency}->{to}}) {
+			push @{$data->[$_ + 1]}, 1 / $json->{rates}->{$plan{currency}->{to}->[$_]} * ($mult{$plan{currency}->{to}->[$_]} // 1) 
+				if defined $json->{rates}->{$plan{currency}->{to}->[$_]};
+		}
+			
 	}
 	save_graph($data, $_[0]);
 }
 
 sub save_graph {
-	say Dumper $_[0];
 	my $graph = GD::Graph::lines->new(1280, 720);
 	my ($y_max, $y_min) = (0, 10e10);
 	for (@{$_[0]}[1..$#{$_[0]}]) {
@@ -144,24 +148,20 @@ sub save_graph {
       	x_labels_vertical => 1,
 	) or die $graph->error;
 	$graph->set_legend(@{$plan{currency}->{to}});
-	$graph->set_title_font(GD::gdGiantFont);
 	my $file_name = $plan{files}->[$_[1]] ? $plan{files}->[$_[1]] : 'file' . ($_[1] + 1) . '.png';
+	my $plot = $graph->plot($_[0]) // return undef;
 	open(IMG, ">$file_name") or die $!;
 	binmode IMG;
-	my $plot = $graph->plot($_[0]);
-	print IMG $plot->png if defined $plot;
+	print IMG $plot->png;
 }
 
 sub request {
-	my $url = shift;
-	my $ua = LWP::UserAgent->new;
-	my $request = HTTP::Request->new( GET => $url );
-	$ua->request($request)->decoded_content;
+	LWP::UserAgent->new->request(HTTP::Request->new( GET => shift ))->decoded_content;
 }
 
 sub parse_sources_names { 
 	$plan{sources} = [];
-	do { push @{$plan{sources}}, $sources{$_} if $sources{$_} } for (split ',', shift); 
+	push @{$plan{sources}}, $sources{$_} for (split ',', shift); 
 }
 
 sub parse_dates {
@@ -179,3 +179,4 @@ for (@ARGV) {
 }
 
 $plan{sources}->[$_]->($_) for (0..$#{$plan{sources}});
+do { $plan{sources}->[$_]->($_) if defined $plan{sources}->[$_] } for (0..$#{$plan{sources}});
