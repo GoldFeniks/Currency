@@ -159,6 +159,7 @@ sub fx {
 }
 
 sub save_graph {
+	return undef if !defined $_[0]->[0];
 	my $graph = GD::Graph::lines->new(max(1280, scalar(@{$_[0]->[0]}) * 20), 720);
 	my ($y_max, $y_min) = (0, 10e10);
 	for (@{$_[0]}[1..$#{$_[0]}]) {
