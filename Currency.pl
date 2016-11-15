@@ -156,7 +156,7 @@ sub fx {
 }
 
 sub save_graph {
-	my $graph = GD::Graph::lines->new(1280, 720);
+	my $graph = GD::Graph::lines->new(max(1280, scalar(@{$_[0]->[0]}) * 20), 720);
 	my ($y_max, $y_min) = (0, 10e10);
 	for (@{$_[0]}[1..$#{$_[0]}]) {
 		$y_min = min($y_min, @{$_});
