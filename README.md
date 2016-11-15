@@ -1,2 +1,2 @@
 # Currency
-Get currency information
+Convert roubles into other currencies
