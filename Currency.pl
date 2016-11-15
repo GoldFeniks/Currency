@@ -52,6 +52,9 @@ my %cb_names = (
 	USD => 'R01235',
 	EUR => 'R01239',
 	JPY => 'R01820',
+	CNY => 'R01375',
+	GBP => 'R01035',
+	UAH => 'R01720',
 );
 
 my %sources = (
