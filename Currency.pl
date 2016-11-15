@@ -181,6 +181,7 @@ sub save_graph {
 	open(IMG, ">$file_name") or die $!;
 	binmode IMG;
 	print IMG $plot->png;
+	say "Saved to $file_name";
 }
 
 sub request {
